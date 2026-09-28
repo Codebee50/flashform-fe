@@ -1,26 +1,174 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Flashform design tokens. Source of truth: BRAND.md §4–§8, §11. */
+@theme {
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Neutrals (warm stone) */
+  --color-bg: #fafaf9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f5f5f4;
+  --color-border: #e7e5e4;
+  --color-border-strong: #d6d3d1;
+  --color-text: #1c1917;
+  --color-text-muted: #57534e;
+  --color-text-subtle: #78716c;
+
+  /* Signal Orange, the single accent */
+  --color-accent: #c2410c;
+  --color-accent-hover: #9a3412;
+  --color-accent-subtle: #fff1ea;
+  --color-accent-fg: #ffffff;
+
+  /* The logo never follows the theme */
+  --color-logo: #c2410c;
+  --color-logo-fg: #ffffff;
+
+  --color-success: #15803d;
+  --color-success-subtle: #ecfdf3;
+  --color-warning: #b45309;
+  --color-warning-subtle: #fffbeb;
+  --color-danger: #b91c1c;
+  --color-danger-hover: #991b1b;
+  --color-danger-subtle: #fef2f2;
+  --color-danger-fg: #ffffff;
+
+  /* Behind dialogs */
+  --color-scrim: rgb(28 25 23 / 0.4);
+
+  /* Answer colors A–F. -fg is the letter on a solid badge (AA contrast);
+     -subtle is the ~10% tint used for a selected answer. */
+  --color-answer-a: #2f5bd3;
+  --color-answer-b: #c98a0b;
+  --color-answer-c: #0e7c7b;
+  --color-answer-d: #7e3aa6;
+  --color-answer-e: #475569;
+  --color-answer-f: #be3455;
+  --color-answer-a-fg: #ffffff;
+  --color-answer-b-fg: #1c1917;
+  --color-answer-c-fg: #ffffff;
+  --color-answer-d-fg: #ffffff;
+  --color-answer-e-fg: #ffffff;
+  --color-answer-f-fg: #ffffff;
+  --color-answer-a-subtle: color-mix(in srgb, var(--color-answer-a) 10%, var(--color-surface));
+  --color-answer-b-subtle: color-mix(in srgb, var(--color-answer-b) 10%, var(--color-surface));
+  --color-answer-c-subtle: color-mix(in srgb, var(--color-answer-c) 10%, var(--color-surface));
+  --color-answer-d-subtle: color-mix(in srgb, var(--color-answer-d) 10%, var(--color-surface));
+  --color-answer-e-subtle: color-mix(in srgb, var(--color-answer-e) 10%, var(--color-surface));
+  --color-answer-f-subtle: color-mix(in srgb, var(--color-answer-f) 10%, var(--color-surface));
+
+  /* Type scale (BRAND.md §5). display-sm is the mobile step of display. projector is
+     the room code on the live room page, sized to be read from the back of a classroom. */
+  --text-projector: clamp(3.5rem, 13vw, 10rem);
+  --text-projector--line-height: 1;
+  --text-projector--letter-spacing: 0.08em;
+  /* For custom codes longer than 6 characters, so 10 still fit on one line at 360px. */
+  --text-projector-long: clamp(2.25rem, 8vw, 6.5rem);
+  --text-projector-long--line-height: 1;
+  --text-projector-long--letter-spacing: 0.08em;
+  --text-display: 3.5rem;
+  --text-display--line-height: 3.75rem;
+  --text-display--letter-spacing: -0.03em;
+  --text-display-sm: 2.5rem;
+  --text-display-sm--line-height: 2.75rem;
+  --text-display-sm--letter-spacing: -0.03em;
+  --text-h1: 2rem;
+  --text-h1--line-height: 2.375rem;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.875rem;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.75rem;
+  --text-body-lg: 1rem;
+  --text-body-lg--line-height: 1.5rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.125rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+
+  --tracking-wordmark: -0.02em;
+  --tracking-code: 0.08em;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --container-page: 75rem;
+  --container-prose: 36rem;
+  --container-phone: 22rem;
+  /* Student screens: one column, 480px max (BRAND.md §6). */
+  --container-student: 30rem;
+
+  --shadow-float: 0 1px 2px rgb(28 25 23 / 0.04), 0 8px 24px rgb(28 25 23 / 0.08);
+
+  --ease-brand: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-fade-in: fade-in 150ms var(--ease-brand);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --color-bg: #0c0a09;
+    --color-surface: #1c1917;
+    --color-surface-2: #292524;
+    --color-border: #33302d;
+    --color-border-strong: #44403c;
+    --color-text: #fafaf9;
+    --color-text-muted: #a8a29e;
+    --color-text-subtle: #8a837e;
+    --color-accent: #f26a3d;
+    --color-accent-hover: #f4845e;
+    --color-accent-subtle: #3a1d12;
+    --color-accent-fg: #1c1917;
+    --color-success: #4ade80;
+    --color-success-subtle: #0f2a1a;
+    --color-warning: #fbbf24;
+    --color-warning-subtle: #2a1f0a;
+    --color-danger: #f87171;
+    --color-danger-hover: #fca5a5;
+    --color-danger-subtle: #2c1212;
+    --color-danger-fg: #1c1917;
+    --color-scrim: rgb(0 0 0 / 0.6);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-accent-subtle);
+  }
 }
