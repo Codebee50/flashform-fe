@@ -4,9 +4,14 @@ import type { QuestionSummary, TeacherQuestion, TeacherState } from "@/lib/types
 
 const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 
-/** The question on screen: the current one (teacher-paced, quick) with its summary. */
-export function currentQuestion(state: TeacherState) {
-  const question = state.questions[state.activity.current_index] ?? state.questions[0];
+/**
+ * The question on screen with its summary: the current one (teacher-paced, quick), or the
+ * one the teacher picked (student-paced, where there is no current question).
+ */
+export function shownQuestion(state: TeacherState, selectedIndex: number) {
+  const index =
+    state.activity.mode === "STUDENT_PACED" ? selectedIndex : state.activity.current_index;
+  const question = state.questions[index] ?? state.questions[0];
   if (!question) return null;
   const summary = state.summaries.find((s) => s.question_id === question.id) ?? {
     question_id: question.id,
@@ -22,8 +27,15 @@ export function currentQuestion(state: TeacherState) {
  * Live results for one question (PRD L2): "answered / joined", % correct when the question
  * has a correct answer, then a bar per option (MC/TF) or the grouped answers (SA).
  */
-export function ActivityResults({ state }: { state: TeacherState }) {
-  const current = currentQuestion(state);
+export function ActivityResults({
+  state,
+  selectedIndex,
+}: {
+  state: TeacherState;
+  /** Student-paced: which question to chart. */
+  selectedIndex: number;
+}) {
+  const current = shownQuestion(state, selectedIndex);
   if (!current) return null;
   const { question, summary } = current;
   const answered = summary.answered_count;

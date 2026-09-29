@@ -18,6 +18,7 @@ import { useActivityState } from "@/lib/use-activity-state";
 import { useOrigin } from "@/lib/use-origin";
 import { useTeacherRoomSocket } from "@/lib/use-room-socket";
 import { ActivityPanel, StudentsCard } from "./activity-panel";
+import { StudentTable } from "./student-table";
 
 /** PRD §9: while an activity is live, also refetch on a timer, in case an event is lost. */
 const LIVE_REFRESH_MS = 2_000;
@@ -31,8 +32,8 @@ type RoomState =
 const pageClass = "mx-auto max-w-page px-4 py-6 sm:px-6 sm:py-8 lg:px-8";
 
 /**
- * The live room page (PRD L1, L2, §10): the code to project, the join link and the lock,
- * the student count, and the running activity with its live results.
+ * The live room page (PRD L1–L3, §10): the code to project, the join link and the lock,
+ * the student count, the running activity with its live results, and everyone's answers.
  */
 export function RoomView({ id }: { id: string }) {
   const roomId = /^\d+$/.test(id) ? Number(id) : null;
@@ -119,6 +120,9 @@ function LoadedRoom({
   const origin = useOrigin();
   const [locking, setLocking] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  // Student-paced: the question the teacher picked for the chart (PRD L2), per activity so
+  // a new quiz starts from question 1.
+  const [picked, setPicked] = useState<{ activityId: number; index: number } | null>(null);
 
   const activity = useActivityState(
     useCallback(
@@ -152,6 +156,17 @@ function LoadedRoom({
     : room.live_activity;
   const isLive = liveActivity !== null;
   const { refetch } = activity;
+  const selectedIndex =
+    shown && picked?.activityId === shown.id
+      ? Math.min(picked.index, Math.max(0, (activity.state?.questions.length ?? 1) - 1))
+      : 0;
+  const shownId = shown?.id ?? null;
+  const selectQuestion = useCallback(
+    (index: number) => {
+      if (shownId !== null) setPicked({ activityId: shownId, index });
+    },
+    [shownId],
+  );
 
   useEffect(() => {
     if (!isLive) return;
@@ -261,9 +276,22 @@ function LoadedRoom({
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <ActivityPanel roomId={room.id} activity={activity} />
+        <ActivityPanel
+          roomId={room.id}
+          activity={activity}
+          selectedIndex={selectedIndex}
+          onSelect={selectQuestion}
+        />
         <StudentsCard state={activity.state} />
       </div>
+
+      {activity.state && (
+        <StudentTable
+          state={activity.state}
+          selectedIndex={selectedIndex}
+          onSelect={selectQuestion}
+        />
+      )}
     </div>
   );
 }

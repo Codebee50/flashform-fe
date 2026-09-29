@@ -23,6 +23,7 @@ import type { PublicRoom, StudentEvent } from "@/lib/types";
 import { useActivityState } from "@/lib/use-activity-state";
 import { useStudentRoomSocket } from "@/lib/use-room-socket";
 import { QuestionView } from "./question-view";
+import { StudentPaced } from "./student-paced";
 import { MessageScreen, StudentShell } from "./student-shell";
 
 const NAME_MAX = 40;
@@ -131,7 +132,7 @@ export function StudentRoom({ code: raw }: { code: string }) {
                 name,
                 token: null,
                 activityId: null,
-                pending: null,
+                pending: [],
               })
             }
           />
@@ -226,6 +227,16 @@ function StudentActivity({
         Stay here for the next one. It opens on its own.
       </MessageScreen>
     );
+  } else if (state.activity.type === "QUIZ" && state.activity.mode === "STUDENT_PACED") {
+    body = (
+      <StudentPaced
+        key={state.activity.id}
+        code={code}
+        state={state}
+        onReplace={activity.replace}
+        onStale={activity.refetch}
+      />
+    );
   } else {
     const question = state.questions[0];
     body = (
@@ -235,6 +246,8 @@ function StudentActivity({
         activityId={state.activity.id}
         question={question}
         questionCount={state.question_count}
+        teacherPaced={state.activity.type === "QUIZ" && state.activity.mode === "TEACHER_PACED"}
+        feedbackOn={state.activity.show_feedback}
         onStale={activity.refetch}
       />
     );

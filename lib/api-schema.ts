@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/activities/{id}/navigate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher-paced: show question `index` to everyone (Next / Previous). Answers to the question being left are locked. Navigating to the current question is a no-op, so retries are safe. 400 `invalid_index` when out of range; 409 `activity_ended` or `not_teacher_paced`. 404 when the activity does not exist or belongs to another teacher. */
+        post: operations["activities_navigate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities/{id}/teacher-state": {
         parameters: {
             query?: never;
@@ -200,6 +217,23 @@ export interface paths {
         get: operations["health"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/participant/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Student-paced: finish the activity. Every answer given is locked (with feedback on, each now carries its `feedback`) and no more answers are accepted. Finishing again is a no-op (200), so retries are safe. 409 `activity_ended` or `not_student_paced`. 401 `invalid_participant_token` when the token is missing, unknown, or the participant left or was removed. */
+        post: operations["participant_finish"];
         delete?: never;
         options?: never;
         head?: never;
@@ -391,7 +425,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Start a Quick Question in the room. Any LIVE activity in the room is ended first, in the same transaction. Only `QUICK` is supported for now. 404 when the room does not exist or belongs to another teacher. */
+        /** @description Start a Quick Question (`QUICK` + `question`) or a quiz (`QUIZ` + `quiz_id` + `mode`: `TEACHER_PACED` or `STUDENT_PACED`). A quiz's questions are copied into the activity, so later edits to the quiz don't affect it. Any LIVE activity in the room is ended first, in the same transaction. 404 `not_found` when the room does not exist or belongs to another teacher; 404 `quiz_not_found` likewise for the quiz (the LIVE activity then keeps running). */
         post: operations["activities_create"];
         delete?: never;
         options?: never;
@@ -410,6 +444,8 @@ export interface components {
             readonly mode: components["schemas"]["ActivityModeEnum"];
             readonly status: components["schemas"]["ActivityStatusEnum"];
             readonly quiz_title: string;
+            /** @description The quiz this was launched from; null for quick questions or once the quiz is deleted. */
+            readonly source_quiz_id: number | null;
             readonly current_index: number;
             readonly show_feedback: boolean;
             readonly shuffle_questions: boolean;
@@ -428,8 +464,27 @@ export interface components {
         ActivityModeEnum: "TEACHER_PACED" | "STUDENT_PACED";
         ActivityStartRequest: {
             type: components["schemas"]["ActivityTypeEnum"];
-            /** @description Required for QUICK. */
+            /** @description QUICK only, required. */
             question?: components["schemas"]["QuickQuestionRequest"];
+            /** @description QUIZ only, required. */
+            quiz_id?: number;
+            /**
+             * @description QUIZ only, required. TEACHER_PACED: everyone sees the question the teacher shows. STUDENT_PACED: each student sees every question, can change answers until they press Finish.
+             *
+             *     * `TEACHER_PACED` - Teacher Paced
+             *     * `STUDENT_PACED` - Student Paced
+             */
+            mode?: components["schemas"]["ActivityModeEnum"];
+            /**
+             * @description QUIZ only: answers lock on submit, and students then see correct/incorrect and the explanation for that question.
+             * @default false
+             */
+            show_feedback: boolean;
+            /**
+             * @description Not supported yet: must be false.
+             * @default false
+             */
+            shuffle_questions: boolean;
         };
         /**
          * @description * `LIVE` - Live
@@ -497,6 +552,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+        };
+        NavigateRequest: {
+            /** @description 0-based order of the question to show. */
+            index: number;
         };
         ParticipantState: {
             activity: components["schemas"]["StudentActivity"];
@@ -642,6 +701,7 @@ export interface components {
             readonly type: components["schemas"]["ActivityTypeEnum"];
             readonly mode: components["schemas"]["ActivityModeEnum"];
             readonly status: components["schemas"]["ActivityStatusEnum"];
+            readonly quiz_title: string;
             readonly current_index: number;
             readonly show_feedback: boolean;
             readonly version: number;
@@ -678,10 +738,17 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             joined_at: string;
-            /** Format: date-time */
-            readonly finished_at: string | null;
+            /**
+             * Format: date-time
+             * @description Student-paced: when they pressed Finish; null until then.
+             */
+            finished_at: string | null;
             /** Format: date-time */
             readonly last_seen_at: string;
+            /** @description Questions this participant has answered (progress, e.g. 4 of 10). */
+            answered_count: number;
+            /** @description Questions in the activity. */
+            question_count: number;
         };
         TeacherQuestion: {
             readonly id: number;
@@ -773,6 +840,64 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    activities_navigate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NavigateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherState"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1189,6 +1314,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    participant_finish: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The token returned by POST /rooms/{code}/join. */
+                "X-Participant-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantState"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

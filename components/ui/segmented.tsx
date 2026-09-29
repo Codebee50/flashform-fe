@@ -14,7 +14,7 @@ export function Segmented<T extends string | number>({
   name: string;
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: ReactNode }[];
+  options: { value: T; label: ReactNode; disabled?: boolean }[];
   hint?: ReactNode;
   error?: string | null;
 }) {
@@ -33,6 +33,7 @@ export function Segmented<T extends string | number>({
               "text-body font-medium transition-colors duration-150 ease-brand " +
               "bg-surface text-text-muted hover:bg-surface-2 hover:text-text " +
               "has-checked:border-accent has-checked:bg-accent-subtle has-checked:text-text " +
+              "has-disabled:cursor-not-allowed has-disabled:opacity-50 has-disabled:hover:bg-surface has-disabled:hover:text-text-muted " +
               "has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent " +
               (error ? "border-danger" : "border-border-strong")
             }
@@ -42,6 +43,7 @@ export function Segmented<T extends string | number>({
               name={name}
               className="sr-only"
               checked={option.value === value}
+              disabled={option.disabled}
               onChange={() => onChange(option.value)}
             />
             {option.label}

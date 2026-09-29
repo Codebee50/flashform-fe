@@ -30,16 +30,20 @@ export type QuizWriteRequest = Schemas["QuizWriteRequest"];
 export type QuizQuestionWriteRequest = Schemas["QuizQuestionWriteRequest"];
 
 export type Activity = Schemas["Activity"];
+export type ActivityMode = Schemas["ActivityModeEnum"];
 export type QuestionType = Schemas["QuestionTypeEnum"];
 export type QuickQuestionRequest = Schemas["QuickQuestionRequest"];
 export type TeacherState = Schemas["TeacherState"];
 export type TeacherQuestion = Schemas["TeacherQuestion"];
+export type TeacherParticipant = Schemas["TeacherParticipant"];
+export type TeacherResponse = Schemas["TeacherResponse"];
 export type QuestionSummary = Schemas["QuestionSummary"];
 
 export type JoinResult = Schemas["JoinResult"];
 export type StudentActivity = Schemas["StudentActivity"];
 export type StudentQuestion = Schemas["StudentQuestion"];
 export type StudentResponse = Schemas["StudentResponse"];
+export type Feedback = Schemas["Feedback"];
 export type ParticipantState = Schemas["ParticipantState"];
 
 /** A student's answer: MC/TF send the choice index, SA the text. */

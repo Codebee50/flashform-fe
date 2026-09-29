@@ -17,9 +17,10 @@ export function SiteHeader() {
           <Link href="#how-it-works" className={`hidden md:inline ${navLink}`}>
             How it works
           </Link>
+          {/* Reliability section is commented out on the landing page for now.
           <Link href="#reliability" className={`hidden md:inline ${navLink}`}>
             Reliability
-          </Link>
+          </Link> */}
           <Link href="#join" className={`sm:hidden ${navLink}`}>
             Join a room
           </Link>

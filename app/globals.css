@@ -172,3 +172,52 @@
     background: var(--color-accent-subtle);
   }
 }
+
+/* Auth pages: the results bars on the classroom sketch grow in once, like answers arriving. */
+@keyframes sketch-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.sketch-bar {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sketch-bar {
+    animation: sketch-bar-grow 600ms var(--ease-brand) both;
+  }
+}
+
+/* Landing page: the joined-student dots on the board appear one by one, once, when the
+   drawing scrolls into view (data-reveal is set by RevealOnView). */
+@keyframes sketch-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.sketch-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal="waiting"] .sketch-dot {
+    opacity: 0;
+  }
+
+  [data-reveal="shown"] .sketch-dot {
+    animation: sketch-dot-in 200ms var(--ease-brand) both;
+  }
+}
+
+/* Faint dot grid, like sketch paper, behind the classroom drawing. */
+.bg-sketch-paper {
+  background-color: var(--color-surface-2);
+  background-image: radial-gradient(var(--color-border-strong) 1px, transparent 1px);
+  background-size: 20px 20px;
+}

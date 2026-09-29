@@ -74,9 +74,9 @@ export async function loadStudentState(
     ...s,
     token: joined.token,
     activityId: joined.activity_id,
-    // An unsaved answer survives re-joining the same activity; one for an old activity can't
+    // Unsaved answers survive re-joining the same activity; ones for an old activity can't
     // be saved any more.
-    pending: s.pending?.activityId === joined.activity_id ? s.pending : null,
+    pending: s.pending.filter((p) => p.activityId === joined.activity_id),
   }));
   return studentApi.state(joined.token, { signal });
 }

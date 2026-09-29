@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
-import { activitiesApi } from "@/lib/activities-api";
+import { activitiesApi, findStartedActivity } from "@/lib/activities-api";
 import { ApiError, errorMessage } from "@/lib/api";
-import { roomsApi } from "@/lib/rooms-api";
 import type { QuestionType, TeacherState } from "@/lib/types";
 
 const PROMPT_MAX = 1000;
@@ -58,7 +57,7 @@ export function QuickQuestionDialog({
       // Starting isn't idempotent: with no response, it may have worked. Look before
       // offering a retry, so a second click can't end the question it just started.
       if (err instanceof ApiError && err.code === "network_error") {
-        const started = await findStarted(roomId, liveActivityId);
+        const started = await findStartedActivity(roomId, liveActivityId);
         if (started) {
           onStarted(started);
           return;
@@ -136,19 +135,4 @@ export function QuickQuestionDialog({
       </form>
     </Dialog>
   );
-}
-
-/** After a start request lost its response: the new activity's state, if it did start. */
-async function findStarted(
-  roomId: number,
-  previousId: number | null,
-): Promise<TeacherState | null> {
-  try {
-    const room = await roomsApi.get(roomId);
-    const live = room.live_activity;
-    if (!live || live.id === previousId) return null;
-    return await activitiesApi.teacherState(live.id);
-  } catch {
-    return null;
-  }
 }

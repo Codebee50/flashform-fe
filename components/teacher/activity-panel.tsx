@@ -1,7 +1,7 @@
 "use client";
 
-import { Radio, Square, Users, Zap } from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, ListChecks, Radio, Square, Users, Zap } from "lucide-react";
+import { useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
@@ -11,8 +11,9 @@ import { activitiesApi } from "@/lib/activities-api";
 import { ApiError, errorMessage } from "@/lib/api";
 import type { QuestionType, TeacherState } from "@/lib/types";
 import type { ActivityState } from "@/lib/use-activity-state";
-import { ActivityResults, currentQuestion } from "./activity-results";
+import { ActivityResults, shownQuestion } from "./activity-results";
 import { QuickQuestionDialog } from "./quick-question-dialog";
+import { StartQuizDialog } from "./start-quiz-dialog";
 
 const TYPE_LABELS: Record<QuestionType, string> = {
   MC: "Multiple choice",
@@ -21,23 +22,37 @@ const TYPE_LABELS: Record<QuestionType, string> = {
 };
 
 /**
- * The room's activity (PRD QQ1–QQ3, QQ5, L2): start a quick question, watch the answers
- * come in, end it. After it ends, the final results stay until the next one starts.
+ * The room's activity (PRD QQ1–QQ3, QQ5, A1, L2): start a quick question or a quiz, watch
+ * the answers come in, move a teacher-paced quiz along (or pick which question to chart in
+ * a student-paced one), end it. After it ends, the final results stay until the next one
+ * starts.
  */
 export function ActivityPanel({
   roomId,
   activity,
+  selectedIndex,
+  onSelect,
 }: {
   roomId: number;
   activity: ActivityState<TeacherState>;
+  /** Student-paced: the question charted. */
+  selectedIndex: number;
+  onSelect: (index: number) => void;
 }) {
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState<"quick" | "quiz" | null>(null);
   const [ending, setEnding] = useState<"confirm" | "pending" | null>(null);
   const [endError, setEndError] = useState<string | null>(null);
 
   const { state } = activity;
   const live = state?.activity.status === "LIVE" ? state.activity : null;
-  const question = state ? currentQuestion(state)?.question : null;
+  const question = state ? shownQuestion(state, selectedIndex)?.question : null;
+  const isQuiz = state?.activity.type === "QUIZ";
+  const studentPaced = isQuiz && state?.activity.mode === "STUDENT_PACED";
+
+  function started(next: TeacherState) {
+    activity.replace(next);
+    setStarting(null);
+  }
 
   async function end() {
     if (!live) return;
@@ -85,14 +100,19 @@ export function ActivityPanel({
         </div>
         <p className="mt-4 text-body-lg text-text">Nothing running yet</p>
         <p className="mt-1 max-w-prose text-body text-text-muted">
-          Start a quick question to hear from everyone. Results come in live.
+          Ask a quick question or run one of your quizzes. Results come in live.
         </p>
       </div>
     );
   } else {
     body = (
       <div className="mt-5">
-        <ActivityResults state={state} />
+        {studentPaced ? (
+          <QuestionPicker state={state} selectedIndex={selectedIndex} onSelect={onSelect} />
+        ) : (
+          isQuiz && <QuizNavigation activity={activity} state={state} />
+        )}
+        <ActivityResults state={state} selectedIndex={selectedIndex} />
       </div>
     );
   }
@@ -104,8 +124,8 @@ export function ActivityPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 id="activity-heading" className="text-h3 font-semibold text-text">
-            {state?.activity.type === "QUICK" ? "Quick question" : "Activity"}
+          <h2 id="activity-heading" className="min-w-0 text-h3 font-semibold break-words text-text">
+            {!state ? "Activity" : isQuiz ? state.activity.quiz_title || "Quiz" : "Quick question"}
           </h2>
           {question && (
             <span className="text-body text-text-muted">{TYPE_LABELS[question.type]}</span>
@@ -119,24 +139,33 @@ export function ActivityPanel({
               End activity
             </Button>
           )}
-          <Button variant={live ? "secondary" : "primary"} onClick={() => setStarting(true)}>
+          <Button variant="secondary" onClick={() => setStarting("quick")}>
             <Zap className="size-4" strokeWidth={1.75} aria-hidden />
             Quick question
+          </Button>
+          <Button variant={live ? "secondary" : "primary"} onClick={() => setStarting("quiz")}>
+            <ListChecks className="size-4" strokeWidth={1.75} aria-hidden />
+            Start quiz
           </Button>
         </div>
       </div>
 
       {body}
 
-      {starting && (
+      {starting === "quick" && (
         <QuickQuestionDialog
           roomId={roomId}
           liveActivityId={live?.id ?? null}
-          onStarted={(started) => {
-            activity.replace(started);
-            setStarting(false);
-          }}
-          onClose={() => setStarting(false)}
+          onStarted={started}
+          onClose={() => setStarting(null)}
+        />
+      )}
+      {starting === "quiz" && (
+        <StartQuizDialog
+          roomId={roomId}
+          liveActivityId={live?.id ?? null}
+          onStarted={started}
+          onClose={() => setStarting(null)}
         />
       )}
 
@@ -163,6 +192,181 @@ export function ActivityPanel({
         </Dialog>
       )}
     </section>
+  );
+}
+
+/** Above this many questions, the progress segments get too thin to read. */
+const MAX_SEGMENTS = 20;
+
+/**
+ * "Question 3 of 10" with Previous / Next (PRD A1). Moving on locks the answers to the
+ * question being left. The target is always computed from the question on screen, so a
+ * double click or a retry can't skip one (navigating is idempotent per index).
+ */
+function QuizNavigation({
+  activity,
+  state,
+}: {
+  activity: ActivityState<TeacherState>;
+  state: TeacherState;
+}) {
+  const [pending, setPending] = useState<"previous" | "next" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { id, status, mode, current_index: index } = state.activity;
+  const total = state.questions.length;
+  const canNavigate = status === "LIVE" && mode === "TEACHER_PACED";
+
+  async function go(direction: "previous" | "next") {
+    const target = direction === "next" ? index + 1 : index - 1;
+    if (target < 0 || target >= total) return;
+    setPending(direction);
+    setError(null);
+    try {
+      activity.replace(await activitiesApi.navigate(id, target));
+    } catch (err) {
+      // Ended or gone meanwhile: the screen is out of date, so show what's really there.
+      if (err instanceof ApiError && (err.status === 409 || err.status === 404)) {
+        activity.refetch();
+      } else {
+        setError(errorMessage(err));
+      }
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="mb-5 border-b border-border pb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p aria-live="polite" className="text-body-lg text-text-muted">
+          Question{" "}
+          <span className="font-mono font-semibold text-text tabular-nums">{index + 1}</span> of{" "}
+          <span className="font-mono tabular-nums">{total}</span>
+        </p>
+        {canNavigate && (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => void go("previous")}
+              disabled={pending !== null || index === 0}
+            >
+              <ChevronLeft className="size-4" strokeWidth={1.75} aria-hidden />
+              {pending === "previous" ? "Going back…" : "Previous"}
+            </Button>
+            <Button
+              onClick={() => void go("next")}
+              disabled={pending !== null || index >= total - 1}
+            >
+              {pending === "next" ? "Moving on…" : "Next"}
+              <ChevronRight className="size-4" strokeWidth={1.75} aria-hidden />
+            </Button>
+          </div>
+        )}
+      </div>
+      {/* One segment per question while they're wide enough to read; then a plain bar. */}
+      {total <= MAX_SEGMENTS ? (
+        <div aria-hidden className="mt-3 flex gap-1">
+          {state.questions.map((q, i) => (
+            <span
+              key={q.id}
+              className={
+                "h-1 flex-1 rounded-full transition-colors duration-220 ease-brand " +
+                (i <= index ? "bg-accent" : "bg-surface-2")
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <div aria-hidden className="mt-3 h-1 overflow-hidden rounded-full bg-surface-2">
+          <div
+            className="h-full rounded-full bg-accent transition-transform duration-220 ease-brand motion-reduce:transition-none"
+            style={{ transform: `translateX(${((index + 1) / total) * 100 - 100}%)` }}
+          />
+        </div>
+      )}
+      {canNavigate && total > 1 && index === total - 1 && (
+        <p className="mt-3 text-body text-text-muted">
+          Last question. End the activity when everyone has answered.
+        </p>
+      )}
+      {error && (
+        <Notice tone="danger" className="mt-3">
+          Couldn&apos;t change the question. {error}
+        </Notice>
+      )}
+    </div>
+  );
+}
+
+const promptPreview = (prompt: string) =>
+  !prompt ? "Asked out loud" : prompt.length > 60 ? `${prompt.slice(0, 59).trimEnd()}…` : prompt;
+
+/**
+ * Student-paced (PRD L2): there's no current question, so the teacher picks which one the
+ * chart shows. Only changes this screen; students aren't moved.
+ */
+function QuestionPicker({
+  state,
+  selectedIndex,
+  onSelect,
+}: {
+  state: TeacherState;
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const selectId = useId();
+  const { questions, participants, activity } = state;
+  const total = questions.length;
+  const finished = participants.filter((p) => p.finished_at !== null).length;
+
+  return (
+    <div className="mb-5 border-b border-border pb-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <label htmlFor={selectId} className="text-label font-medium text-text-muted">
+            Results for
+          </label>
+          <select
+            id={selectId}
+            value={selectedIndex}
+            onChange={(event) => onSelect(Number(event.target.value))}
+            className={
+              "mt-1.5 block h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-body " +
+              "text-text transition-colors duration-150 ease-brand hover:border-text-subtle"
+            }
+          >
+            {questions.map((question, index) => (
+              <option key={question.id} value={index}>
+                {index + 1}. {promptPreview(question.prompt)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => onSelect(selectedIndex - 1)}
+            disabled={selectedIndex === 0}
+            aria-label="Previous question"
+          >
+            <ChevronLeft className="size-4" strokeWidth={1.75} aria-hidden />
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => onSelect(selectedIndex + 1)}
+            disabled={selectedIndex >= total - 1}
+            aria-label="Next question"
+          >
+            <ChevronRight className="size-4" strokeWidth={1.75} aria-hidden />
+          </Button>
+        </div>
+      </div>
+      <p aria-live="polite" className="mt-3 text-body text-text-muted">
+        {activity.status === "LIVE" ? "Students work at their own pace. " : ""}
+        <span className="font-medium text-text tabular-nums">{finished}</span> of{" "}
+        <span className="tabular-nums">{participants.length}</span> finished.
+      </p>
+    </div>
   );
 }
 

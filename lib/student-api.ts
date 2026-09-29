@@ -31,5 +31,11 @@ export const studentApi = {
       answer,
       student(token, options),
     ),
+  /**
+   * Student-paced: locks every answer given. Idempotent (same body again), so safe to retry.
+   * 409 `not_student_paced` / `activity_ended`.
+   */
+  finish: (token: string) =>
+    api.post<ParticipantState>("/participant/finish", undefined, student(token)),
   leave: (token: string) => api.post<void>("/participant/leave", undefined, student(token)),
 };

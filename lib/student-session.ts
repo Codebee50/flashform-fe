@@ -1,7 +1,7 @@
 "use client";
 
 // A student's identity per room, kept in localStorage (PRD §7, S3): the name to re-join
-// with, the participant token for the current activity, and an answer that hasn't been
+// with, the participant token for the current activity, and the answers that haven't been
 // confirmed yet. Every read goes to storage, so tabs share the latest session.
 import { useCallback, useSyncExternalStore } from "react";
 import type { Answer } from "./types";
@@ -15,7 +15,8 @@ export type StudentSession = {
   /** Null until joined, and after the server refused it. */
   token: string | null;
   activityId: number | null;
-  pending: PendingAnswer | null;
+  /** At most one per question: a student-paced student can leave several saving at once. */
+  pending: PendingAnswer[];
 };
 
 const PREFIX = "flashform.student.";
@@ -46,11 +47,17 @@ function parse(raw: string | null): StudentSession | null {
       name: data.name,
       token: typeof data.token === "string" ? data.token : null,
       activityId: typeof data.activityId === "number" ? data.activityId : null,
-      pending: data.pending ?? null,
+      pending: parsePending(data.pending),
     };
   } catch {
     return null;
   }
+}
+
+function parsePending(value: unknown): PendingAnswer[] {
+  // Sessions saved before student-paced quizzes held a single answer, or null.
+  if (!value) return [];
+  return (Array.isArray(value) ? value : [value]) as PendingAnswer[];
 }
 
 export function readSession(code: string): StudentSession | null {
