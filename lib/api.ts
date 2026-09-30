@@ -185,20 +185,78 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   } = options;
   if (!auth) return parse<T>(await send(path, method, body, null, signal, headers));
 
-  return withSessionHandling(redirectOnSessionEnd, async () => {
-    const sent = getAccessToken();
-    const first = await send(path, method, body, sent, signal, headers);
-    if (first.status !== 401) return parse<T>(first);
+  return withSessionHandling(redirectOnSessionEnd, async () =>
+    parse<T>(await sendAuthorized(path, method, body, signal, headers)),
+  );
+}
 
-    // If another request already refreshed, just use its token.
-    const current = getAccessToken();
-    const fresh = current && current !== sent ? current : await refreshAccessToken();
-    const retry = await send(path, method, body, fresh, signal, headers);
-    if (retry.status === 401) {
-      clearTokens();
-      throw sessionEnded();
+/** Sends a request with the teacher's access token, refreshing it once on a 401. */
+async function sendAuthorized(
+  path: string,
+  method: Method,
+  body: unknown,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<Response> {
+  const sent = getAccessToken();
+  const first = await send(path, method, body, sent, signal, headers);
+  if (first.status !== 401) return first;
+
+  // If another request already refreshed, just use its token.
+  const current = getAccessToken();
+  const fresh = current && current !== sent ? current : await refreshAccessToken();
+  const retry = await send(path, method, body, fresh, signal, headers);
+  if (retry.status === 401) {
+    clearTokens();
+    throw sessionEnded();
+  }
+  return retry;
+}
+
+/** The file name in a `Content-Disposition` header, if there is one. */
+function attachmentName(header: string | null): string | null {
+  if (!header) return null;
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      // Fall through to the plain parameter.
     }
-    return parse<T>(retry);
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain ? plain[1] : null;
+}
+
+/**
+ * A file from a teacher endpoint, e.g. a report's CSV. A plain `<a href>` can't send the
+ * Bearer header, so the file is fetched here (with the usual 401 → refresh) and handed back
+ * as a blob. Errors are JSON like everywhere else and throw an `ApiError`.
+ *
+ * `filename` comes from `Content-Disposition`, which is null when the API doesn't expose
+ * that header to this origin (CORS), so callers need a fallback.
+ */
+export async function apiDownload(
+  path: string,
+  {
+    accept = "*/*",
+    redirectOnSessionEnd = true,
+    signal,
+  }: { accept?: string; redirectOnSessionEnd?: boolean; signal?: AbortSignal } = {},
+): Promise<{ blob: Blob; filename: string | null }> {
+  return withSessionHandling(redirectOnSessionEnd, async () => {
+    const response = await sendAuthorized(path, "GET", undefined, signal, {
+      Accept: `${accept}, application/json;q=0.5`,
+    });
+    if (!response.ok) throw await toError(response);
+    let blob: Blob;
+    try {
+      blob = await response.blob();
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw networkError();
+    }
+    return { blob, filename: attachmentName(response.headers.get("Content-Disposition")) };
   });
 }
 

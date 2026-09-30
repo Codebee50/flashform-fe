@@ -50,6 +50,8 @@ export function StudentRoom({ code: raw }: { code: string }) {
   );
   const [attempt, setAttempt] = useState(0);
   const [left, setLeft] = useState(false);
+  // The teacher removed them (PRD L5): back to the name screen, saying why.
+  const [removed, setRemoved] = useState(false);
 
   useEffect(() => {
     if (!valid) return;
@@ -100,12 +102,21 @@ export function StudentRoom({ code: raw }: { code: string }) {
           writeSession(code, null);
           router.replace("/");
         }}
+        onRemoved={() => {
+          setRemoved(true);
+          writeSession(code, null);
+          // The room may have been locked to keep them out: look again.
+          retryLookup();
+        }}
       />
     );
   }
 
   return (
     <StudentShell code={code}>
+      {removed && lookup.status !== "loading" && (
+        <Notice className="mb-6">Your teacher removed you from this activity.</Notice>
+      )}
       {lookup.status === "loading" && <NameSkeleton />}
       {lookup.status === "error" && (
         <MessageScreen
@@ -126,15 +137,16 @@ export function StudentRoom({ code: raw }: { code: string }) {
         ) : (
           <NameForm
             roomName={lookup.room.name}
-            onSubmit={(name) =>
+            onSubmit={(name) => {
+              setRemoved(false);
               writeSession(code, {
                 roomCode: lookup.room.code,
                 name,
                 token: null,
                 activityId: null,
                 pending: [],
-              })
-            }
+              });
+            }}
           />
         ))}
     </StudentShell>
@@ -145,10 +157,12 @@ function StudentActivity({
   code,
   session,
   onLeft,
+  onRemoved,
 }: {
   code: string;
   session: StudentSession;
   onLeft: () => void;
+  onRemoved: () => void;
 }) {
   const activity = useActivityState(
     useCallback((_: number | null, signal: AbortSignal) => loadStudentState(code, signal), [code]),
@@ -168,7 +182,7 @@ function StudentActivity({
     onEvent: (event: StudentEvent) => {
       if (event.type === "participant_removed") {
         // PRD L5: back to the join screen for this room, name and all.
-        if (event.participant_id === activity.state?.participant.id) writeSession(code, null);
+        if (event.participant_id === activity.state?.participant.id) onRemoved();
         return;
       }
       activity.handleEvent(event);

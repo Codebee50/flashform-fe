@@ -1,8 +1,8 @@
-import { Check, MessageSquareText } from "lucide-react";
+import { Check, EyeOff, MessageSquareText } from "lucide-react";
 import { ANSWER_LETTERS, answerStyles } from "@/components/ui/answer-colors";
 import type { QuestionSummary, TeacherQuestion, TeacherState } from "@/lib/types";
 
-const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
+export const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 
 /**
  * The question on screen with its summary: the current one (teacher-paced, quick), or the
@@ -13,34 +13,43 @@ export function shownQuestion(state: TeacherState, selectedIndex: number) {
     state.activity.mode === "STUDENT_PACED" ? selectedIndex : state.activity.current_index;
   const question = state.questions[index] ?? state.questions[0];
   if (!question) return null;
-  const summary = state.summaries.find((s) => s.question_id === question.id) ?? {
-    question_id: question.id,
-    answered_count: 0,
-    correct_count: null,
-    choice_counts: question.choices.map(() => 0),
-    text_counts: [],
-  };
-  return { question, summary };
+  return { question, summary: summaryFor(state, question) };
+}
+
+/** A question's summary; all zeros if the state has none for it yet. */
+export function summaryFor(state: TeacherState, question: TeacherQuestion): QuestionSummary {
+  return (
+    state.summaries.find((s) => s.question_id === question.id) ?? {
+      question_id: question.id,
+      answered_count: 0,
+      correct_count: null,
+      choice_counts: question.choices.map(() => 0),
+      text_counts: [],
+    }
+  );
 }
 
 /**
  * Live results for one question (PRD L2): "answered / joined", % correct when the question
- * has a correct answer, then a bar per option (MC/TF) or the grouped answers (SA).
+ * has a correct answer, then a bar per option (MC/TF) or the grouped answers (SA). With
+ * results hidden (PRD L4) only "answered / joined" stays, so a projector gives nothing away.
  */
 export function ActivityResults({
   state,
   selectedIndex,
+  hideResults = false,
 }: {
   state: TeacherState;
   /** Student-paced: which question to chart. */
   selectedIndex: number;
+  hideResults?: boolean;
 }) {
   const current = shownQuestion(state, selectedIndex);
   if (!current) return null;
   const { question, summary } = current;
   const answered = summary.answered_count;
   const joined = state.participant_count;
-  const showCorrect = summary.correct_count !== null && answered > 0;
+  const showCorrect = summary.correct_count !== null && answered > 0 && !hideResults;
 
   return (
     <div>
@@ -72,7 +81,17 @@ export function ActivityResults({
       </dl>
 
       <div className="mt-6 border-t border-border pt-5">
-        {question.type === "SA" ? (
+        {hideResults ? (
+          <div className="flex flex-col items-center py-8 text-center">
+            <div className="flex size-11 items-center justify-center rounded-full bg-surface-2">
+              <EyeOff className="size-5 text-text-subtle" strokeWidth={1.75} aria-hidden />
+            </div>
+            <p className="mt-4 text-body-lg text-text">Results hidden</p>
+            <p className="mt-1 max-w-prose text-body text-text-muted">
+              Answers keep coming in. Show results when you&apos;re ready to go over them.
+            </p>
+          </div>
+        ) : question.type === "SA" ? (
           <TextResults summary={summary} />
         ) : (
           <ChoiceResults question={question} summary={summary} />
@@ -82,7 +101,8 @@ export function ActivityResults({
   );
 }
 
-function ChoiceResults({
+/** A bar per option (MC/TF), the correct one marked. */
+export function ChoiceResults({
   question,
   summary,
 }: {
@@ -156,14 +176,21 @@ function ChoiceResults({
   );
 }
 
-function TextResults({ summary }: { summary: QuestionSummary }) {
+/** Short answers grouped, most common first. */
+export function TextResults({
+  summary,
+  emptyMessage = "Answers appear here as students send them.",
+}: {
+  summary: QuestionSummary;
+  emptyMessage?: string;
+}) {
   if (summary.text_counts.length === 0) {
     return (
       <div className="flex flex-col items-center py-8 text-center">
         <div className="flex size-11 items-center justify-center rounded-full bg-surface-2">
           <MessageSquareText className="size-5 text-text-subtle" strokeWidth={1.75} aria-hidden />
         </div>
-        <p className="mt-4 text-body text-text-muted">Answers appear here as students send them.</p>
+        <p className="mt-4 text-body text-text-muted">{emptyMessage}</p>
       </div>
     );
   }

@@ -31,8 +31,9 @@ const MODE_HINTS: Record<ActivityMode, string> = {
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
- * Starts a saved quiz in the room (PRD A1, A2): pick the quiz, the mode, and whether
- * students see the right answer after each one. As with quick questions, the button is the
+ * Starts a saved quiz in the room (PRD A1–A3): pick the quiz, the mode, whether students
+ * see the right answer after each one and, when they work at their own pace, whether each
+ * gets the questions in their own order. As with quick questions, the button is the
  * confirm when something is already live.
  */
 export function StartQuizDialog({
@@ -52,6 +53,8 @@ export function StartQuizDialog({
   const [quizId, setQuizId] = useState<number | null>(null);
   const [mode, setMode] = useState<ActivityMode>("TEACHER_PACED");
   const [showFeedback, setShowFeedback] = useState(false);
+  // Kept while switching modes, but only sent (and shown) for student-paced (PRD A3).
+  const [shuffle, setShuffle] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listLabelId = useId();
@@ -84,6 +87,7 @@ export function StartQuizDialog({
           quiz_id: quizId,
           mode,
           show_feedback: showFeedback,
+          shuffle_questions: mode === "STUDENT_PACED" && shuffle,
         }),
       );
     } catch (err) {
@@ -205,22 +209,22 @@ export function StartQuizDialog({
           hint={MODE_HINTS[mode]}
         />
 
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
+        <div className="space-y-4">
+          <OptionCheckbox
             checked={showFeedback}
-            onChange={(event) => setShowFeedback(event.target.checked)}
-            className="mt-0.5 size-4 shrink-0 cursor-pointer accent-accent"
+            onChange={setShowFeedback}
+            label="Show the correct answer after each response"
+            hint="Students see right or wrong and your explanation, and can't change that answer."
           />
-          <span>
-            <span className="block text-body font-medium text-text">
-              Show the correct answer after each response
-            </span>
-            <span className="mt-0.5 block text-body text-text-subtle">
-              Students see right or wrong and your explanation, and can&apos;t change that answer.
-            </span>
-          </span>
-        </label>
+          {mode === "STUDENT_PACED" && (
+            <OptionCheckbox
+              checked={shuffle}
+              onChange={setShuffle}
+              label="Shuffle question order"
+              hint="Each student gets the questions in their own random order. Results stay in quiz order."
+            />
+          )}
+        </div>
 
         {liveActivityId !== null && (
           <Notice tone="warning">
@@ -243,5 +247,32 @@ export function StartQuizDialog({
         </DialogActions>
       </form>
     </Dialog>
+  );
+}
+
+function OptionCheckbox({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 size-4 shrink-0 cursor-pointer accent-accent"
+      />
+      <span>
+        <span className="block text-body font-medium text-text">{label}</span>
+        <span className="mt-0.5 block text-body text-text-subtle">{hint}</span>
+      </span>
+    </label>
   );
 }

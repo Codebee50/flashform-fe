@@ -39,6 +39,9 @@ export type TeacherParticipant = Schemas["TeacherParticipant"];
 export type TeacherResponse = Schemas["TeacherResponse"];
 export type QuestionSummary = Schemas["QuestionSummary"];
 
+export type Report = Schemas["Report"];
+export type ReportRoom = Schemas["ReportRoom"];
+
 export type JoinResult = Schemas["JoinResult"];
 export type StudentActivity = Schemas["StudentActivity"];
 export type StudentQuestion = Schemas["StudentQuestion"];

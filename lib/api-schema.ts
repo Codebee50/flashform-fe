@@ -4,6 +4,41 @@
  */
 
 export interface paths {
+    "/api/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Your ENDED activities, newest first, with participant count and average score (PRD RP1). `room` limits them to one room; 404 `not_found` when that room does not exist or belongs to another teacher. For a report's detail, use `GET /activities/{id}/teacher-state`. */
+        get: operations["reports_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/activities/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Delete an ended activity's report: its questions, participants and answers (PRD RP4). 409 `activity_live` while it is running: end it first. 404 when the activity does not exist or belongs to another teacher. */
+        delete: operations["activities_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Change display settings: `hide_results` (PRD L4). Works on ended activities too. The teacher's socket gets `activity_updated`; students get nothing (they never see results). Setting the current value is a no-op, so retries are safe. 404 when the activity does not exist or belongs to another teacher. */
+        patch: operations["activities_partial_update"];
+        trace?: never;
+    };
     "/api/activities/{id}/end": {
         parameters: {
             query?: never;
@@ -38,6 +73,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/activities/{id}/participants/{participant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Remove a participant (PRD L5): their token stops working, they leave the live view and the report, and their screen gets `participant_removed`. They can join again unless the room is locked. Works on ended activities too. Removing someone already removed (or who left) is a no-op (204), so retries are safe. 404 `participant_not_found` when they aren't in this activity. 404 when the activity does not exist or belongs to another teacher. */
+        delete: operations["activities_participant_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/activities/{id}/report.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The report as a CSV download, UTF-8 with a byte order mark (PRD RP3): one row per participant with `name, joined_at, finished_at, score, total_possible, percent`, then one column per question (header `Q1: <prompt>`, prompt truncated to 60 characters) holding the answer text. Works for LIVE activities too (a snapshot). Errors are JSON. 404 when the activity does not exist or belongs to another teacher. */
+        get: operations["reports_csv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities/{id}/teacher-state": {
         parameters: {
             query?: never;
@@ -49,6 +118,23 @@ export interface paths {
         get: operations["activities_teacher_state"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/activities/{id}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Start Vote (PRD QQ4): end this LIVE short answer quick question and start a quick MC question with the same prompt whose options are its distinct answers (trimmed, case-insensitive; spelled as first submitted, in submission order). Returns the new activity. 409 `not_short_answer` unless this is an SA quick question; `activity_ended` when it is no longer LIVE (e.g. a retry after the vote started); `not_enough_answers` with fewer than 2 distinct answers. 404 when the activity does not exist or belongs to another teacher. */
+        post: operations["activities_vote"];
         delete?: never;
         options?: never;
         head?: never;
@@ -372,7 +458,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Join the room's LIVE activity. 404 `room_not_found`, 423 `room_locked`, 409 `no_live_activity` (wait for the teacher), 429 `throttled`. The token is only returned here. */
+        /** @description Join the room's LIVE activity. 404 `room_not_found`, 423 `room_locked` (unless `X-Participant-Token` shows you already joined this room and weren't removed), 409 `no_live_activity` (wait for the teacher), 429 `throttled`. The token is only returned here. */
         post: operations["rooms_join"];
         delete?: never;
         options?: never;
@@ -425,7 +511,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Start a Quick Question (`QUICK` + `question`) or a quiz (`QUIZ` + `quiz_id` + `mode`: `TEACHER_PACED` or `STUDENT_PACED`). A quiz's questions are copied into the activity, so later edits to the quiz don't affect it. Any LIVE activity in the room is ended first, in the same transaction. 404 `not_found` when the room does not exist or belongs to another teacher; 404 `quiz_not_found` likewise for the quiz (the LIVE activity then keeps running). */
+        /** @description Start a Quick Question (`QUICK` + `question`) or a quiz (`QUIZ` + `quiz_id` + `mode`: `TEACHER_PACED` or `STUDENT_PACED`; `shuffle_questions` only with `STUDENT_PACED`). A quiz's questions are copied into the activity, so later edits to the quiz don't affect it. Any LIVE activity in the room is ended first, in the same transaction. 404 `not_found` when the room does not exist or belongs to another teacher; 404 `quiz_not_found` likewise for the quiz (the LIVE activity then keeps running). */
         post: operations["activities_create"];
         delete?: never;
         options?: never;
@@ -481,7 +567,7 @@ export interface components {
              */
             show_feedback: boolean;
             /**
-             * @description Not supported yet: must be false.
+             * @description QUIZ, STUDENT_PACED only: each student gets the questions in their own random order.
              * @default false
              */
             shuffle_questions: boolean;
@@ -561,13 +647,17 @@ export interface components {
             activity: components["schemas"]["StudentActivity"];
             participant: components["schemas"]["StudentParticipant"];
             question_count: number;
-            /** @description Visible questions: the current one (teacher-paced), all (student-paced), none once the activity has ended. */
+            /** @description Visible questions: the current one (teacher-paced), all (student-paced, in this student's own order when shuffled), none once the activity has ended. */
             questions: components["schemas"]["StudentQuestion"][];
         };
         PasswordResetConfirmRequest: {
             uid: string;
             token: string;
             new_password: string;
+        };
+        PatchedActivityUpdateRequest: {
+            /** @description Hide the answer distribution on the teacher's live view (for projecting). Students never see results either way. */
+            hide_results?: boolean;
         };
         PatchedRoomUpdateRequest: {
             name?: string;
@@ -673,6 +763,38 @@ export interface components {
             detail: string;
             user: components["schemas"]["User"];
         };
+        Report: {
+            id: number;
+            room: components["schemas"]["ReportRoom"];
+            type: components["schemas"]["ActivityTypeEnum"];
+            mode: components["schemas"]["ActivityModeEnum"];
+            /** @description "" for quick questions. */
+            quiz_title: string;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            ended_at: string;
+            /** @description Excludes participants who left while it was live. */
+            participant_count: number;
+            question_count: number;
+            /** @description Questions with a correct answer: the most a participant can score. */
+            total_possible: number;
+            /**
+             * Format: double
+             * @description Mean correct answers per participant (2 decimals); null without participants or when total_possible is 0.
+             */
+            avg_score: number | null;
+            /**
+             * Format: double
+             * @description avg_score as a percentage of total_possible (1 decimal).
+             */
+            avg_percent: number | null;
+        };
+        ReportRoom: {
+            id: number;
+            name: string;
+            code: string;
+        };
         ResponseSubmitRequest: {
             /** @description MC/TF: 0-based (TF: 0 True, 1 False). */
             choice_index?: number | null;
@@ -715,6 +837,7 @@ export interface components {
         };
         StudentQuestion: {
             id: number;
+            /** @description Position in the quiz (0-based). With shuffled questions this is not the position on the student's screen: number questions by their place in `questions`. */
             order: number;
             type: components["schemas"]["QuestionTypeEnum"];
             prompt: string;
@@ -749,6 +872,8 @@ export interface components {
             answered_count: number;
             /** @description Questions in the activity. */
             question_count: number;
+            /** @description Correct answers. Out of the state's total_possible (PRD §17). */
+            score: number;
         };
         TeacherQuestion: {
             readonly id: number;
@@ -778,6 +903,8 @@ export interface components {
             /** @description Joined participants, excluding removed ones. */
             participants: components["schemas"]["TeacherParticipant"][];
             participant_count: number;
+            /** @description Questions with a correct answer: the most a participant can score. */
+            total_possible: number;
             responses: components["schemas"]["TeacherResponse"][];
             summaries: components["schemas"]["QuestionSummary"][];
         };
@@ -811,6 +938,147 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    reports_list: {
+        parameters: {
+            query?: {
+                /** @description Only this room's reports. Omit for all rooms. */
+                room?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Report"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    activities_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    activities_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedActivityUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherState"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     activities_end: {
         parameters: {
             query?: never;
@@ -907,6 +1175,94 @@ export interface operations {
             };
         };
     };
+    activities_participant_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+                /** @description Participant id. */
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reports_csv: {
+        parameters: {
+            query?: {
+                /** @description IANA time zone for joined_at / finished_at, e.g. Europe/London (the browser's). Default UTC. */
+                tz?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     activities_teacher_state: {
         parameters: {
             query?: never;
@@ -936,6 +1292,52 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    activities_vote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Activity id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherState"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1774,7 +2176,10 @@ export interface operations {
     rooms_join: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional: your token from an earlier (or the current) activity in this room. Lets you re-join while the room is locked. */
+                "X-Participant-Token"?: string;
+            };
             path: {
                 /** @description Room code as typed; case-insensitive, spaces ignored. */
                 code: string;

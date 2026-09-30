@@ -1,5 +1,6 @@
-import { Check, UsersRound, X } from "lucide-react";
+import { Check, EyeOff, UserMinus, UsersRound, X } from "lucide-react";
 import { ANSWER_LETTERS } from "@/components/ui/answer-colors";
+import { IconButton } from "@/components/ui/button";
 import type {
   TeacherParticipant,
   TeacherQuestion,
@@ -37,35 +38,58 @@ function answerText(question: TeacherQuestion, response: TeacherResponse) {
  * Everyone's answers (PRD L3): a row per student, a column per question. Green ✓ correct,
  * red ✗ incorrect, grey when the question has no correct answer, blank when unanswered.
  * Student-paced adds each student's progress, and a question's header charts it (PRD L2).
+ * Reports (PRD RP2) show the final state with each student's score.
+ *
+ * For the projector (PRD L4), names can become "Student 1, 2, …" in join order, and results
+ * can hide: cells then only say that a student answered, never what or whether it was right.
  */
 export function StudentTable({
   state,
-  selectedIndex,
+  selectedIndex = 0,
   onSelect,
+  showScore = false,
+  hideNames = false,
+  hideResults = false,
+  onRemove,
 }: {
   state: TeacherState;
   /** Student-paced: the question charted. */
-  selectedIndex: number;
-  onSelect: (index: number) => void;
+  selectedIndex?: number;
+  /** Student-paced: pick the question to chart. Without it the headers are plain. */
+  onSelect?: (index: number) => void;
+  /** A score column, when some question has a correct answer. */
+  showScore?: boolean;
+  hideNames?: boolean;
+  hideResults?: boolean;
+  /** Adds a remove button to each row (PRD L5), called with the name shown in the row. */
+  onRemove?: (participant: TeacherParticipant, name: string) => void;
 }) {
-  const { activity, questions, participants, responses } = state;
+  const { activity, questions, participants, responses, total_possible: totalPossible } = state;
   const names = displayNames(participants);
   const byCell = new Map(responses.map((r) => [`${r.participant_id}:${r.question_id}`, r]));
   const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
   // Alphabetical is easiest to scan; the "(2)" suffixes keep join order within a name.
-  const rows = participants
-    .map((participant, joined) => ({
-      participant,
-      joined,
-      name: names.get(participant.id) ?? participant.name,
-    }))
-    .sort((a, b) => collator.compare(a.name, b.name) || a.joined - b.joined);
+  // Hidden names stay in join order, so the numbers count up and give nothing away.
+  const rows = participants.map((participant, joined) => ({
+    participant,
+    joined,
+    name: hideNames
+      ? `Student ${joined + 1}`
+      : (names.get(participant.id) ?? participant.name),
+  }));
+  if (!hideNames) {
+    rows.sort((a, b) => collator.compare(a.name, b.name) || a.joined - b.joined);
+  }
   const studentPaced = activity.type === "QUIZ" && activity.mode === "STUDENT_PACED";
+  const pickable = studentPaced && onSelect !== undefined;
+  const scored = showScore && totalPossible > 0 && !hideResults;
   const current =
     questions.length <= 1
       ? null
       : studentPaced
-        ? selectedIndex
+        ? pickable
+          ? selectedIndex
+          : null
         : activity.status === "LIVE" && activity.mode === "TEACHER_PACED"
           ? activity.current_index
           : null;
@@ -79,7 +103,14 @@ export function StudentTable({
         <h2 id="answers-heading" className="text-h3 font-semibold text-text">
           Answers
         </h2>
-        <Legend />
+        {hideResults ? (
+          <p className="inline-flex items-center gap-1.5 text-caption text-text-muted">
+            <EyeOff className="size-3.5" strokeWidth={2} aria-hidden />
+            Results hidden. Cells only show who answered.
+          </p>
+        ) : (
+          <Legend />
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -88,7 +119,9 @@ export function StudentTable({
             <UsersRound className="size-5 text-text-subtle" strokeWidth={1.75} aria-hidden />
           </div>
           <p className="mt-4 text-body text-text-muted">
-            Each student gets a row here as soon as they join.
+            {activity.status === "LIVE"
+              ? "Each student gets a row here as soon as they join."
+              : "Nobody joined this activity."}
           </p>
         </div>
       ) : (
@@ -105,6 +138,14 @@ export function StudentTable({
                 >
                   Student
                 </th>
+                {scored && (
+                  <th
+                    scope="col"
+                    className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2.5 text-right text-label font-medium whitespace-nowrap text-text-muted"
+                  >
+                    Score
+                  </th>
+                )}
                 {studentPaced && (
                   <th
                     scope="col"
@@ -120,20 +161,20 @@ export function StudentTable({
                       key={question.id}
                       scope="col"
                       title={question.prompt || undefined}
-                      aria-current={isCurrent && !studentPaced ? "step" : undefined}
+                      aria-current={isCurrent && !pickable ? "step" : undefined}
                       className={
                         "sticky top-0 z-10 min-w-16 bg-surface-2 text-left text-label font-medium tabular-nums " +
-                        (studentPaced ? "p-0 " : "px-3 py-2.5 ") +
+                        (pickable ? "p-0 " : "px-3 py-2.5 ") +
                         (isCurrent
                           ? "border-b-2 border-accent text-accent"
                           : "border-b border-border text-text-muted")
                       }
                     >
-                      {studentPaced ? (
+                      {pickable ? (
                         // Picks the question for the chart above.
                         <button
                           type="button"
-                          onClick={() => onSelect(index)}
+                          onClick={() => onSelect?.(index)}
                           aria-pressed={isCurrent}
                           className="w-full px-3 py-2.5 text-left transition-colors duration-150 ease-brand hover:bg-surface hover:text-text focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
                         >
@@ -154,6 +195,14 @@ export function StudentTable({
                   aria-hidden
                   className="sticky top-0 z-10 w-full border-b border-border bg-surface-2"
                 />
+                {onRemove && (
+                  <th
+                    scope="col"
+                    className="sticky top-0 right-0 z-20 border-b border-border bg-surface-2 px-2"
+                  >
+                    <span className="sr-only">Remove</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -166,6 +215,16 @@ export function StudentTable({
                   >
                     {name}
                   </th>
+                  {scored && (
+                    <td className="border-b border-border px-3 py-2 text-right font-mono whitespace-nowrap tabular-nums transition-colors duration-150 group-hover:bg-surface-2">
+                      <span className="font-medium text-text">{participant.score}</span>
+                      <span className="text-text-subtle">
+                        <span aria-hidden>/</span>
+                        <span className="sr-only"> out of </span>
+                        {totalPossible}
+                      </span>
+                    </td>
+                  )}
                   {studentPaced && (
                     <td className="border-b border-border px-3 py-2 text-right whitespace-nowrap transition-colors duration-150 group-hover:bg-surface-2">
                       <Progress participant={participant} />
@@ -179,7 +238,11 @@ export function StudentTable({
                         className="border-b border-border px-3 py-2 transition-colors duration-150 group-hover:bg-surface-2"
                       >
                         {response ? (
-                          <AnswerCell question={question} response={response} />
+                          hideResults ? (
+                            <AnsweredCell />
+                          ) : (
+                            <AnswerCell question={question} response={response} />
+                          )
                         ) : (
                           <span className="sr-only">No answer</span>
                         )}
@@ -190,6 +253,17 @@ export function StudentTable({
                     aria-hidden
                     className="border-b border-border transition-colors duration-150 group-hover:bg-surface-2"
                   />
+                  {onRemove && (
+                    <td className="sticky right-0 z-10 border-b border-border bg-surface px-2 py-0.5 text-right transition-colors duration-150 group-hover:bg-surface-2">
+                      <IconButton
+                        label={`Remove ${name}`}
+                        onClick={() => onRemove(participant, name)}
+                        className="hover:text-danger"
+                      >
+                        <UserMinus className="size-4" strokeWidth={1.75} aria-hidden />
+                      </IconButton>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -251,6 +325,16 @@ function AnswerCell({
       {Icon && <Icon className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />}
       <span className="truncate">{short}</span>
       {tone !== "ungraded" && <span className="sr-only">, {tone}</span>}
+    </span>
+  );
+}
+
+/** Hidden results (PRD L4): that they answered, not what, and no right or wrong colour. */
+function AnsweredCell() {
+  return (
+    <span className="inline-flex h-7 items-center rounded-sm bg-surface-2 px-2">
+      <span className="size-2 rounded-full bg-text-subtle" aria-hidden />
+      <span className="sr-only">Answered</span>
     </span>
   );
 }

@@ -26,10 +26,15 @@ function sleep(ms: number, signal: AbortSignal) {
  * A 429 waits for as long as the server says and tries again: a class behind one school
  * IP re-joining together can hit the limit, and that isn't the student's problem.
  */
-async function join(code: string, name: string, signal: AbortSignal): Promise<JoinResult | null> {
+async function join(
+  code: string,
+  name: string,
+  token: string | null,
+  signal: AbortSignal,
+): Promise<JoinResult | null> {
   for (;;) {
     try {
-      return await studentApi.join(code, name, { signal });
+      return await studentApi.join(code, name, { signal, token });
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       if (error.code === "no_live_activity") return null;
@@ -68,7 +73,10 @@ export async function loadStudentState(
     return current;
   }
 
-  const joined = await join(room.code, session.name, signal);
+  // The last activity's token, unless it was just refused: it gets a student who already
+  // joined back in if the room is locked now.
+  const previous = readSession(code)?.token ?? null;
+  const joined = await join(room.code, session.name, previous, signal);
   if (!joined) return current;
   updateSession(code, (s) => ({
     ...s,

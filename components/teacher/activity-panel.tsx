@@ -1,13 +1,23 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ListChecks, Radio, Square, Users, Zap } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  ListChecks,
+  Radio,
+  SquareCheckBig,
+  Square,
+  Users,
+  Zap,
+} from "lucide-react";
 import { useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
-import { activitiesApi } from "@/lib/activities-api";
+import { activitiesApi, findStartedActivity } from "@/lib/activities-api";
 import { ApiError, errorMessage } from "@/lib/api";
 import type { QuestionType, TeacherState } from "@/lib/types";
 import type { ActivityState } from "@/lib/use-activity-state";
@@ -15,14 +25,14 @@ import { ActivityResults, shownQuestion } from "./activity-results";
 import { QuickQuestionDialog } from "./quick-question-dialog";
 import { StartQuizDialog } from "./start-quiz-dialog";
 
-const TYPE_LABELS: Record<QuestionType, string> = {
+export const TYPE_LABELS: Record<QuestionType, string> = {
   MC: "Multiple choice",
   TF: "True or false",
   SA: "Short answer",
 };
 
 /**
- * The room's activity (PRD QQ1–QQ3, QQ5, A1, L2): start a quick question or a quiz, watch
+ * The room's activity (PRD QQ1–QQ5, A1, L2): start a quick question or a quiz, watch
  * the answers come in, move a teacher-paced quiz along (or pick which question to chart in
  * a student-paced one), end it. After it ends, the final results stay until the next one
  * starts.
@@ -42,12 +52,16 @@ export function ActivityPanel({
   const [starting, setStarting] = useState<"quick" | "quiz" | null>(null);
   const [ending, setEnding] = useState<"confirm" | "pending" | null>(null);
   const [endError, setEndError] = useState<string | null>(null);
+  const [voting, setVoting] = useState(false);
 
   const { state } = activity;
   const live = state?.activity.status === "LIVE" ? state.activity : null;
   const question = state ? shownQuestion(state, selectedIndex)?.question : null;
   const isQuiz = state?.activity.type === "QUIZ";
   const studentPaced = isQuiz && state?.activity.mode === "STUDENT_PACED";
+  // A LIVE short answer quick question can become a vote on its answers (PRD QQ4).
+  const canVote = live !== null && !isQuiz && question?.type === "SA";
+  const distinctAnswers = state?.summaries[0]?.text_counts.length ?? 0;
 
   function started(next: TeacherState) {
     activity.replace(next);
@@ -112,7 +126,11 @@ export function ActivityPanel({
         ) : (
           isQuiz && <QuizNavigation activity={activity} state={state} />
         )}
-        <ActivityResults state={state} selectedIndex={selectedIndex} />
+        <ActivityResults
+          state={state}
+          selectedIndex={selectedIndex}
+          hideResults={state.activity.hide_results}
+        />
       </div>
     );
   }
@@ -133,6 +151,23 @@ export function ActivityPanel({
           {state && !live && <Badge>Ended</Badge>}
         </div>
         <div className="flex flex-wrap gap-2">
+          {state && !live && (
+            <ButtonLink href={`/teacher/reports/${state.activity.id}`} variant="ghost">
+              <ClipboardList className="size-4" strokeWidth={1.75} aria-hidden />
+              View report
+            </ButtonLink>
+          )}
+          {canVote && (
+            <Button
+              variant="secondary"
+              onClick={() => setVoting(true)}
+              disabled={distinctAnswers < 2}
+              title={distinctAnswers < 2 ? "A vote needs at least 2 different answers" : undefined}
+            >
+              <SquareCheckBig className="size-4" strokeWidth={1.75} aria-hidden />
+              Start vote
+            </Button>
+          )}
           {live && (
             <Button variant="secondary" onClick={() => setEnding("confirm")}>
               <Square className="size-4" strokeWidth={1.75} aria-hidden />
@@ -169,6 +204,23 @@ export function ActivityPanel({
         />
       )}
 
+      {voting && live && (
+        <StartVoteDialog
+          roomId={roomId}
+          activityId={live.id}
+          optionCount={distinctAnswers}
+          onStarted={(next) => {
+            activity.replace(next);
+            setVoting(false);
+          }}
+          onGone={() => {
+            activity.refetch();
+            setVoting(false);
+          }}
+          onClose={() => setVoting(false)}
+        />
+      )}
+
       {ending && (
         <Dialog
           title="End this activity?"
@@ -192,6 +244,81 @@ export function ActivityPanel({
         </Dialog>
       )}
     </section>
+  );
+}
+
+/**
+ * Confirms Start Vote (PRD QQ4): ends the short answer question, locking its answers, and
+ * starts a quick MC question whose options are its distinct answers, in submission order.
+ */
+function StartVoteDialog({
+  roomId,
+  activityId,
+  optionCount,
+  onStarted,
+  onGone,
+  onClose,
+}: {
+  roomId: number;
+  activityId: number;
+  /** Distinct answers so far: the vote's options. More may arrive before it starts. */
+  optionCount: number;
+  onStarted: (state: TeacherState) => void;
+  /** The question ended (or went) meanwhile and no vote started: show what's there. */
+  onGone: () => void;
+  onClose: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start() {
+    setPending(true);
+    setError(null);
+    try {
+      onStarted(await activitiesApi.vote(activityId));
+      return;
+    } catch (err) {
+      const lost = err instanceof ApiError && err.code === "network_error";
+      const ended = err instanceof ApiError && err.code === "activity_ended";
+      if (lost || ended) {
+        // The vote may have started (a lost response, or another tab): switch to it
+        // rather than offering a retry.
+        const started = await findStartedActivity(roomId, activityId);
+        if (started) {
+          onStarted(started);
+          return;
+        }
+      }
+      if (ended || (err instanceof ApiError && err.status === 404)) {
+        onGone();
+        return;
+      }
+      setError(
+        err instanceof ApiError && err.code === "not_enough_answers"
+          ? "A vote needs at least 2 different answers. The question is still running."
+          : errorMessage(err),
+      );
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="End the question and start a vote?"
+      description={`The ${optionCount} different answers become the choices, and students vote on the one they think is best. Their short answers are locked and kept in this question's report.`}
+      onClose={onClose}
+      busy={pending}
+    >
+      {error && <Notice tone="danger">{error}</Notice>}
+      <DialogActions>
+        <Button variant="secondary" onClick={onClose} disabled={pending}>
+          Keep collecting
+        </Button>
+        <Button onClick={() => void start()} disabled={pending}>
+          {pending ? "Starting vote…" : "Start vote"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

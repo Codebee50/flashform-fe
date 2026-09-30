@@ -11,6 +11,7 @@ import {
 } from "@/components/rooms/room-dialogs";
 import { describeActivity, RoomStatus } from "@/components/rooms/room-status";
 import { QuizzesSection } from "@/components/quizzes/quizzes-section";
+import { RecentReports } from "@/components/reports/recent-reports";
 import { Button, IconButton } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,13 +27,14 @@ type OpenDialog =
 
 const createdDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
-/** The teacher's home (PRD §10): rooms and quizzes. Reports come later. */
+/** The teacher's home (PRD §10): rooms, quizzes and recent reports. */
 export function Dashboard() {
   return (
     <div className="mx-auto max-w-page space-y-12 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
       <h1 className="sr-only">Dashboard</h1>
       <RoomsSection />
       <QuizzesSection />
+      <RecentReports />
     </div>
   );
 }

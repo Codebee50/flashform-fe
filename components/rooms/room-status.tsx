@@ -2,8 +2,8 @@ import { Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { LiveActivitySummary, Room } from "@/lib/types";
 
-/** "Quick question" or the quiz's title, for a room's live activity. */
-export function describeActivity(activity: LiveActivitySummary): string {
+/** "Quick question" or the quiz's title, for a room's live activity or a report. */
+export function describeActivity(activity: Pick<LiveActivitySummary, "type" | "quiz_title">): string {
   return activity.type === "QUIZ" ? activity.quiz_title || "Quiz" : "Quick question";
 }
 
